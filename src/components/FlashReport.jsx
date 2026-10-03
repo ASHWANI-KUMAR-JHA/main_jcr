@@ -325,7 +325,7 @@ function FlashReport({ onBack, onLogout }) {
       doc.setFont('helvetica', 'normal');
 
       const part1 = 'web: ';
-      const part2 = 'www.sunfeedsolar.com';
+      const part2 = 'www.sunfeedindia.com';
       const part3 = ' | Contact us at:+91-124-4072847 or email us at: ';
       const part4 = 'info.sunfeed@gmail.com';
       const part5 = ' | CIN: U40300HR2016PTC058410';
@@ -337,7 +337,7 @@ function FlashReport({ onBack, onLogout }) {
       cursorX += doc.getTextWidth(part1);
 
       doc.setTextColor(26, 115, 232);
-      doc.textWithLink(part2, cursorX, footerTextY, { url: 'http://www.sunfeedsolar.com' });
+      doc.textWithLink(part2, cursorX, footerTextY, { url: 'http://www.sunfeedindia.com' });
       cursorX += doc.getTextWidth(part2);
 
       doc.setTextColor(0, 0, 0);
@@ -507,7 +507,7 @@ function FlashReport({ onBack, onLogout }) {
 
       // Calculate total width to center the footer text
       const part1 = 'web: ';
-      const part2 = 'www.sunfeedsolar.com';
+      const part2 = 'www.sunfeedindia.com';
       const part3 = ' | Contact us at:+91-124-4072847 or email us at: ';
       const part4 = 'info.sunfeed@gmail.com';
       const part5 = ' | CIN: U40300HR2016PTC058410';
@@ -519,9 +519,9 @@ function FlashReport({ onBack, onLogout }) {
       doc.text(part1, cursorX, footerTextY);
       cursorX += doc.getTextWidth(part1);
 
-      // "www.sunfeedsolar.com" in blue as link
+      // "www.sunfeedindia.com" in blue as link
       doc.setTextColor(26, 115, 232);
-      doc.textWithLink(part2, cursorX, footerTextY, { url: 'http://www.sunfeedsolar.com' });
+      doc.textWithLink(part2, cursorX, footerTextY, { url: 'http://www.sunfeedindia.com' });
       cursorX += doc.getTextWidth(part2);
 
       // " | Contact us at:+91-124-4072847 or email us at: "
@@ -969,7 +969,7 @@ function FlashReport({ onBack, onLogout }) {
 
                 <div className="letterhead-contact-footer">
                   <hr className="footer-line" />
-                  <p>web: <a href="http://www.sunfeedsolar.com">www.sunfeedsolar.com</a> | Contact us at:+91-124-4072847 or email us at: <a href="mailto:info.sunfeed@gmail.com">info.sunfeed@gmail.com</a> | CIN: U40300HR2016PTC058410</p>
+                  <p>web: <a href="http://www.sunfeedindia.com">www.sunfeedindia.com</a> | Contact us at:+91-124-4072847 or email us at: <a href="mailto:info.sunfeed@gmail.com">info.sunfeed@gmail.com</a> | CIN: U40300HR2016PTC058410</p>
                 </div>
 
                 <div className="report-footer">

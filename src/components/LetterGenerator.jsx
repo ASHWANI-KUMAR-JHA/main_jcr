@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { ArrowLeft, LogOut, Save, Trash2, FileText, Download, RefreshCw, Plus } from 'lucide-react';
+import { ArrowLeft, LogOut, Save, Trash2, FileText, Download, RefreshCw, Plus, Bold, Italic, Underline, Palette, FileJson, Upload } from 'lucide-react';
 import jsPDF from 'jspdf';
 import Logo from './Logo';
 import { getCurrentUser } from '../utils/auth';
@@ -12,9 +12,32 @@ import {
   applyVariables,
   humanizeVariable,
 } from '../utils/letterTemplates';
+import { wrapSelection, MARKERS, colorMarkers, parseRichText } from '../utils/richText';
 import './LetterGenerator.css';
 
+// Preset colours offered in the formatting toolbar.
+const COLOR_PRESETS = ['#dc2626', '#2563eb', '#16a34a', '#ca8a04', '#7c3aed', '#000000'];
+
 const BLANK = { id: null, name: '', subject: '', body: '' };
+
+// Render markup (**bold**, //italic//, __underline__, {color:#..|txt}) as
+// styled spans for the live preview.
+function RichText({ text }) {
+  const segments = parseRichText(text);
+  return segments.map((s, idx) => (
+    <span
+      key={idx}
+      style={{
+        fontWeight: s.bold ? 700 : undefined,
+        fontStyle: s.italic ? 'italic' : undefined,
+        textDecoration: s.underline ? 'underline' : undefined,
+        color: s.color || undefined,
+      }}
+    >
+      {s.text}
+    </span>
+  ));
+}
 
 function LetterGenerator({ onBack, onLogout }) {
   const [templates, setTemplates] = useState([]);
@@ -23,7 +46,33 @@ function LetterGenerator({ onBack, onLogout }) {
   const [values, setValues] = useState({});
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showColors, setShowColors] = useState(false);
   const previewRef = useRef(null);
+  const bodyRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  // Apply a formatting marker to the currently selected text in the body.
+  // Falls back to inserting empty markers at the caret if nothing is selected.
+  const applyFormat = useCallback((marker) => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? el.value.length;
+    const { text, selectionStart, selectionEnd } = wrapSelection(
+      el.value, start, end, marker.prefix, marker.suffix
+    );
+    setDraft((d) => ({ ...d, body: text }));
+    // Restore selection after React re-renders the textarea.
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(selectionStart, selectionEnd);
+    });
+  }, []);
+
+  const applyColor = useCallback((hex) => {
+    applyFormat(colorMarkers(hex));
+    setShowColors(false);
+  }, [applyFormat]);
 
   // Optional letter meta shown above the subject. Each block can be toggled
   // off per letter without clearing what you typed.
@@ -160,6 +209,68 @@ function LetterGenerator({ onBack, onLogout }) {
     setValues((prev) => ({ ...prev, [name]: value }));
   }, []);
 
+  // Export the full letter — template content, optional meta blocks, and the
+  // filled-in variable values — as a portable JSON file. Loading it back
+  // restores everything exactly, including formatting markup.
+  const exportToJSON = useCallback(() => {
+    const payload = {
+      type: 'sunfeed-letter',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      template: {
+        name: draft.name,
+        subject: draft.subject,
+        body: draft.body,
+      },
+      meta,
+      values,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const fileName = (draft.name || 'letter').replace(/[^\w-]+/g, '_').toLowerCase();
+    a.download = `${fileName}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    setStatus('Letter exported as JSON.');
+  }, [draft, meta, values]);
+
+  // Restore a letter from a previously exported JSON file.
+  const handleLoadJSON = useCallback((e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if (data.type !== 'sunfeed-letter' || !data.template) {
+          throw new Error('Not a valid Sunfeed letter file.');
+        }
+        setSelectedId('');
+        setDraft({
+          id: null,
+          name: data.template.name || '',
+          subject: data.template.subject || '',
+          body: data.template.body || '',
+        });
+        if (data.meta && typeof data.meta === 'object') {
+          setMeta((prev) => ({ ...prev, ...data.meta }));
+        }
+        setValues(data.values && typeof data.values === 'object' ? data.values : {});
+        setStatus(`Loaded letter from "${file.name}".`);
+      } catch (err) {
+        setStatus(`Load failed: ${err.message}`);
+      }
+    };
+    reader.onerror = () => setStatus('Load failed: could not read file.');
+    reader.readAsText(file);
+    // Reset so the same file can be chosen again later.
+    e.target.value = '';
+  }, []);
+
   const exportToPDF = useCallback(async () => {
     const doc = new jsPDF('portrait', 'mm', 'a4');
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -213,7 +324,7 @@ function LetterGenerator({ onBack, onLogout }) {
       doc.setFontSize(7);
       doc.setFont('helvetica', 'normal');
       const p1 = 'web: ';
-      const p2 = 'www.sunfeedsolar.com';
+      const p2 = 'www.sunfeedindia.com';
       const p3 = ' | Contact us at:+91-124-4072847 or email us at: ';
       const p4 = 'info.sunfeed@gmail.com';
       const p5 = ' | CIN: U40300HR2016PTC058410';
@@ -222,7 +333,7 @@ function LetterGenerator({ onBack, onLogout }) {
       doc.setTextColor(0, 0, 0);
       doc.text(p1, cx, footerTextY); cx += doc.getTextWidth(p1);
       doc.setTextColor(26, 115, 232);
-      doc.textWithLink(p2, cx, footerTextY, { url: 'http://www.sunfeedsolar.com' }); cx += doc.getTextWidth(p2);
+      doc.textWithLink(p2, cx, footerTextY, { url: 'http://www.sunfeedindia.com' }); cx += doc.getTextWidth(p2);
       doc.setTextColor(0, 0, 0);
       doc.text(p3, cx, footerTextY); cx += doc.getTextWidth(p3);
       doc.setTextColor(26, 115, 232);
@@ -279,35 +390,84 @@ function LetterGenerator({ onBack, onLogout }) {
       y += 4;
     }
 
-    // Subject (bold)
-    if (renderedSubject.trim()) {
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      const subjectLines = doc.splitTextToSize(`Subject: ${renderedSubject}`, contentWidth);
-      subjectLines.forEach((line) => {
-        doc.text(line, margin, y);
-        y += 6;
-      });
-      y += 4;
-    }
-
-    // Body (wrap + paginate)
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(11);
     const lineHeight = 6;
-    const paragraphs = renderedBody.split(/\n/);
-    for (const para of paragraphs) {
-      const lines = para.trim() === '' ? [''] : doc.splitTextToSize(para, contentWidth);
-      for (const line of lines) {
+
+    // Pick the helvetica style string for a formatted segment. Bold takes
+    // priority with italic, matching jsPDF's available styles.
+    const fontStyleFor = (seg, baseBold) => {
+      const bold = seg.bold || baseBold;
+      if (bold && seg.italic) return 'bolditalic';
+      if (bold) return 'bold';
+      if (seg.italic) return 'italic';
+      return 'normal';
+    };
+
+    // Convert a hex colour (#rgb or #rrggbb) to [r,g,b]. Defaults to black.
+    const hexToRgb = (hex) => {
+      if (!hex) return [0, 0, 0];
+      let h = hex.replace('#', '').trim();
+      if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+      if (h.length !== 6 || /[^0-9a-fA-F]/.test(h)) return [0, 0, 0];
+      return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+    };
+
+    // Render formatted segments across a block, wrapping on word boundaries,
+    // applying per-run font style and colour, and paginating as needed.
+    // `leading` is optional text (e.g. "Subject: ") rendered bold/plain first.
+    const renderFormatted = (markup, { baseBold = false, leading = null } = {}) => {
+      const segments = parseRichText(markup);
+      let x = margin;
+
+      const newLine = () => {
+        x = margin;
+        y += lineHeight;
         if (y > bottomLimit) {
           doc.addPage();
           drawHeaderFooter();
           y = topStart;
         }
-        doc.text(line, margin, y);
-        y += lineHeight;
+      };
+
+      // Emit a run of text with a fixed style, wrapping word by word.
+      const emit = (str, style, rgb) => {
+        doc.setFont('helvetica', style);
+        doc.setTextColor(rgb[0], rgb[1], rgb[2]);
+        // Split keeping explicit newlines, then wrap words within each piece.
+        const parts = str.split(/\n/);
+        parts.forEach((part, pi) => {
+          if (pi > 0) newLine();
+          const words = part.split(/(\s+)/); // keep spaces as tokens
+          for (const token of words) {
+            if (token === '') continue;
+            const w = doc.getTextWidth(token);
+            if (x + w > margin + contentWidth && x > margin) newLine();
+            doc.text(token, x, y);
+            x += w;
+          }
+        });
+      };
+
+      if (leading) emit(leading, baseBold ? 'bold' : 'normal', [0, 0, 0]);
+      for (const seg of segments) {
+        emit(seg.text, fontStyleFor(seg, baseBold), hexToRgb(seg.color));
       }
+      // Reset to defaults for anything drawn after.
+      doc.setTextColor(0, 0, 0);
+      doc.setFont('helvetica', 'normal');
+    };
+
+    // Subject (bold base + inline formatting)
+    if (renderedSubject.trim()) {
+      doc.setFontSize(11);
+      renderFormatted(renderedSubject, { baseBold: true, leading: 'Subject: ' });
+      y += lineHeight;
+      y += 4;
     }
+
+    // Body (wrap + paginate + inline formatting)
+    doc.setFontSize(11);
+    renderFormatted(renderedBody, { baseBold: false });
+    y += lineHeight;
 
     const fileName = (draft.name || 'letter').replace(/[^\w-]+/g, '_').toLowerCase();
     doc.save(`${fileName}.pdf`);
@@ -355,6 +515,19 @@ function LetterGenerator({ onBack, onLogout }) {
                   <button className="lg-btn primary" onClick={handleSave} disabled={loading}>
                     <Save size={15} /> {draft.id ? 'Update' : 'Save'}
                   </button>
+                  <button className="lg-btn" onClick={exportToJSON} title="Export this letter (with values & formatting) as JSON">
+                    <FileJson size={15} /> Export JSON
+                  </button>
+                  <button className="lg-btn" onClick={() => fileInputRef.current?.click()} title="Load a previously exported letter JSON">
+                    <Upload size={15} /> Load JSON
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="application/json,.json"
+                    style={{ display: 'none' }}
+                    onChange={handleLoadJSON}
+                  />
                   {draft.id && (
                     <button className="lg-btn danger" onClick={handleDelete} disabled={loading}>
                       <Trash2 size={15} /> Delete
@@ -399,10 +572,48 @@ function LetterGenerator({ onBack, onLogout }) {
               />
 
               <label className="lg-label">
-                Body <span className="lg-hint">Use {'{{variable}}'} for placeholders</span>
+                Body <span className="lg-hint">Select text, then format it</span>
               </label>
+              <div className="lg-format-bar">
+                <button type="button" className="lg-fmt-btn" title="Bold" onClick={() => applyFormat(MARKERS.bold)}>
+                  <Bold size={15} />
+                </button>
+                <button type="button" className="lg-fmt-btn" title="Italic" onClick={() => applyFormat(MARKERS.italic)}>
+                  <Italic size={15} />
+                </button>
+                <button type="button" className="lg-fmt-btn" title="Underline" onClick={() => applyFormat(MARKERS.underline)}>
+                  <Underline size={15} />
+                </button>
+                <div className="lg-color-wrap">
+                  <button type="button" className="lg-fmt-btn" title="Text colour" onClick={() => setShowColors((s) => !s)}>
+                    <Palette size={15} />
+                  </button>
+                  {showColors && (
+                    <div className="lg-color-pop">
+                      {COLOR_PRESETS.map((hex) => (
+                        <button
+                          key={hex}
+                          type="button"
+                          className="lg-swatch"
+                          style={{ background: hex }}
+                          title={hex}
+                          onClick={() => applyColor(hex)}
+                        />
+                      ))}
+                      <label className="lg-swatch-custom" title="Custom colour">
+                        <input
+                          type="color"
+                          onChange={(e) => applyColor(e.target.value)}
+                        />
+                        +
+                      </label>
+                    </div>
+                  )}
+                </div>
+              </div>
               <textarea
                 className="lg-textarea"
+                ref={bodyRef}
                 value={draft.body}
                 onChange={(e) => setDraft((d) => ({ ...d, body: e.target.value }))}
                 placeholder={'Dear {{customer_name}},\n\nThis is to confirm that your {{product}} installed at {{address}} is covered...'}
@@ -535,9 +746,9 @@ function LetterGenerator({ onBack, onLogout }) {
                   <div className="lg-letter-address">{applyVariables(meta.address, values)}</div>
                 )}
                 {renderedSubject.trim() && (
-                  <div className="lg-letter-subject"><strong>Subject: {renderedSubject}</strong></div>
+                  <div className="lg-letter-subject"><strong>Subject: <RichText text={renderedSubject} /></strong></div>
                 )}
-                <div className="lg-letter-body">{renderedBody}</div>
+                <div className="lg-letter-body"><RichText text={renderedBody} /></div>
               </div>
             </div>
           </div>
