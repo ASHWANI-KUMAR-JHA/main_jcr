@@ -242,6 +242,83 @@
   margin-bottom: 16px;
 }
 
+/* Equipment serial select + QR scan button */
+.pf-scan-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.pf-scan-row select,
+.pf-scan-row .ss-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.pf-scan-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px;
+  border: 1px solid #f59e0b;
+  border-radius: 10px;
+  background: #fffbeb;
+  color: #b45309;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+}
+
+.pf-scan-btn:hover:not(:disabled) {
+  background: #fef3c7;
+  border-color: #d97706;
+}
+
+.pf-scan-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.pf-scan-result {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.35;
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+
+.pf-scan-result svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.pf-scan-result.ok {
+  color: #15803d;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+
+.pf-scan-result.bad {
+  color: #b91c1c;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+}
+
+@media (max-width: 520px) {
+  .pf-scan-btn span {
+    display: none;
+  }
+
+  .pf-scan-btn {
+    padding: 0 14px;
+  }
+}
+
 .pf-help {
   font-size: 0.78rem;
   color: #94a3b8;

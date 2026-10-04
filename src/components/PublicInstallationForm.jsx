@@ -2,9 +2,11 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   CheckCircle2, Send, MapPin, ChevronLeft, ChevronRight, Check,
   FolderOpen, MapPinned, Cpu, ClipboardCheck, AlertCircle, LogOut, UserCircle,
-  Paperclip, Image as ImageIcon, FileText, X, Loader2, Camera,
+  Paperclip, Image as ImageIcon, FileText, X, Loader2, Camera, QrCode,
 } from 'lucide-react';
 import Logo from './Logo';
+import QrScannerModal from './QrScannerModal';
+import SearchableSelect from './SearchableSelect';
 import { emptyInstallation, insertInstallations } from '../utils/installations';
 import {
   fetchWorkOrders,
@@ -100,6 +102,14 @@ const WO_FIELD_TO_CATEGORY = {
   module_serial: 'module',
   battery_serial: 'battery',
   luminaire_serial: 'luminaire',
+};
+
+// Friendly labels for the equipment categories, used in scanner titles and
+// the "not found" messages shown under a field.
+const CATEGORY_LABEL = {
+  module: 'Solar Panel',
+  battery: 'Battery',
+  luminaire: 'Luminaire',
 };
 
 function PublicInstallationForm({ onLogout, initialWorkOrder = '' }) {
@@ -203,6 +213,12 @@ function PublicInstallationForm({ onLogout, initialWorkOrder = '' }) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [serialWarnings, setSerialWarnings] = useState([]);
 
+  // QR scanning for equipment serials. `scanField` holds the field key being
+  // scanned (or null when the scanner is closed). `scanResults` keeps the last
+  // scanned text + match status per field so we can show it below the input.
+  const [scanField, setScanField] = useState(null);
+  const [scanResults, setScanResults] = useState({});
+
   const reviewIndex = STEPS.length; // review is the final "virtual" step
   const isReview = current === reviewIndex;
 
@@ -240,6 +256,25 @@ function PublicInstallationForm({ onLogout, initialWorkOrder = '' }) {
   const update = useCallback((key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   }, []);
+
+  // Called when the QR scanner decodes a code for the given field. We try to
+  // match the scanned text against the available serials for that category.
+  // On a match we set the dropdown value; otherwise we flag it as not found.
+  const handleScanResult = useCallback((fieldKey, rawText) => {
+    const scanned = String(rawText || '').trim();
+    const category = WO_FIELD_TO_CATEGORY[fieldKey];
+    const options = woItems[category] || [];
+    const match = options.find(
+      (it) => String(it.serial).trim().toLowerCase() === scanned.toLowerCase()
+    );
+    if (match) {
+      update(fieldKey, match.serial);
+      setScanResults((prev) => ({ ...prev, [fieldKey]: { text: scanned, found: true } }));
+    } else {
+      setScanResults((prev) => ({ ...prev, [fieldKey]: { text: scanned, found: false } }));
+    }
+    setScanField(null);
+  }, [woItems, update]);
 
   // Select a work order by id. Also stamps its name into the work_order field
   // and clears any equipment serials picked for a previous work order.
@@ -688,6 +723,7 @@ function PublicInstallationForm({ onLogout, initialWorkOrder = '' }) {
                     (() => {
                       const category = WO_FIELD_TO_CATEGORY[f.key];
                       const options = woItems[category] || [];
+                      const scan = scanResults[f.key];
                       // Keep the current value visible even if it's the one just
                       // picked (it stays "available" until submit).
                       return (
@@ -697,23 +733,42 @@ function PublicInstallationForm({ onLogout, initialWorkOrder = '' }) {
                             {step.required?.includes(f.key) && <span className="pf-req">*</span>}
                             <span className="pf-count">{options.length} available</span>
                           </label>
-                          <select
-                            id={f.key}
-                            value={form[f.key] ?? ''}
-                            onChange={(e) => update(f.key, e.target.value)}
-                            disabled={woLoading || options.length === 0}
-                          >
-                            <option value="">
-                              {woLoading
-                                ? 'Loading…'
-                                : options.length === 0
-                                  ? 'No serials available'
-                                  : `— Select ${f.label} —`}
-                            </option>
-                            {options.map((it) => (
-                              <option key={it.id} value={it.serial}>{it.serial}</option>
-                            ))}
-                          </select>
+                          <div className="pf-scan-row">
+                            <SearchableSelect
+                              id={f.key}
+                              value={form[f.key] ?? ''}
+                              options={options.map((it) => ({ value: it.serial, label: it.serial }))}
+                              onChange={(val) => update(f.key, val)}
+                              disabled={woLoading || options.length === 0}
+                              placeholder={
+                                woLoading
+                                  ? 'Loading…'
+                                  : options.length === 0
+                                    ? 'No serials available'
+                                    : `— Select ${f.label} —`
+                              }
+                            />
+                            <button
+                              type="button"
+                              className="pf-scan-btn"
+                              onClick={() => setScanField(f.key)}
+                              disabled={woLoading || options.length === 0}
+                              title={`Scan ${CATEGORY_LABEL[category]} QR code`}
+                              aria-label={`Scan ${CATEGORY_LABEL[category]} QR code`}
+                            >
+                              <QrCode size={18} />
+                              <span>Scan</span>
+                            </button>
+                          </div>
+                          {scan && (
+                            <span className={`pf-scan-result ${scan.found ? 'ok' : 'bad'}`}>
+                              {scan.found ? (
+                                <><Check size={14} /> Scanned: {scan.text}</>
+                              ) : (
+                                <><AlertCircle size={14} /> Scanned “{scan.text}” — no such pending {CATEGORY_LABEL[category]} installation item in this list.</>
+                              )}
+                            </span>
+                          )}
                           <span className="pf-help">
                             {f.help} Choices come from work order “{selectedWorkOrder.name}”.
                           </span>
@@ -803,6 +858,15 @@ function PublicInstallationForm({ onLogout, initialWorkOrder = '' }) {
           )}
         </footer>
       </div>
+
+      {/* QR scanner popup */}
+      {scanField && (
+        <QrScannerModal
+          title={`Scan ${CATEGORY_LABEL[WO_FIELD_TO_CATEGORY[scanField]]} code`}
+          onResult={(text) => handleScanResult(scanField, text)}
+          onClose={() => setScanField(null)}
+        />
+      )}
 
       {/* Confirmation popup */}
       {showConfirm && (
